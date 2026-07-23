@@ -61,7 +61,7 @@ try:
     # Adding column "Rejection_Reason" to invalid records
     orders_df = orders_df.withColumn("Rejection_Reason",
                                      when(col("order_id").isNull(),lit("Missing order_id"))
-                                     .when(col("price").isNull(),lit("Missing price"))
+                                     .when(col("price").isNull(),lit("Price is not numeric"))
                                      .when(col("price")<=0,lit("Invalid price")))
 
 
@@ -74,14 +74,17 @@ try:
     valid_records_df=orders_df.filter(valid_conditions)
     invalid_records_df=orders_df.filter(~valid_conditions)
 
-    logger.info(f"Valid records count: {valid_records_df.count()}")
-    logger.info(f"Invalid records count: {invalid_records_df.count()}")
+    valid_records_count = valid_records_df.count()
+    invalid_records_count = invalid_records_df.count()
 
-    if valid_records_df.count() == 0:
+    logger.info(f"Valid records count: {valid_records_count}")
+    logger.info(f"Invalid records count: {invalid_records_count}")
+
+    if valid_records_count == 0:
         logger.error("No valid record found. Failing the job.")
         raise Exception("Data quality checks failed. No valid records available.")
 
-    if invalid_records_df.count()>0:
+    if invalid_records_count > 0:
         logger.info(f"Writing invalid records to {args['REJECT_PATH']}")
         invalid_records_dyf=DynamicFrame.fromDF(invalid_records_df, glueContext, "Invalid Records")
         glueContext.write_dynamic_frame.from_options(
@@ -120,7 +123,6 @@ try:
     # Commit the job
     logger.info("Committing Glue Job")
     job.commit()
-
     logger.info("Orders ETL completed successfully")
 
 except Exception as e:
