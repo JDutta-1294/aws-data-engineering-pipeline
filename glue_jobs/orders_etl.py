@@ -3,14 +3,17 @@ from awsglue.utils import getResolvedOptions
 from awsglue.context import GlueContext
 from pyspark.context import SparkContext
 from awsglue.job import Job
-
+from pyspark.sql.functions import col, when, lit, count, upper,round,row_number
+from awsglue.dynamicframe import DynamicFrame
+from pyspark.sql.window import Window
 
 # Read runtime arguments
 args = getResolvedOptions(
                         sys.argv,
                         ["JOB_NAME",
                          "INPUT_PATH",
-                         "OUTPUT_PATH"]
+                         "OUTPUT_PATH",
+                         "REJECT_PATH"]
                          )
 
 # Create Spark Context
@@ -48,6 +51,77 @@ try:
 
     orders_df = orders_dyf.toDF()
     logger.info(f"Successfully read {orders_df.count()} records")
+
+    # Data Quality Checks
+    logger.info("Starting data quality checks")
+    orders_df.printSchema()
+
+    
+    orders_df=orders_df.withColumn("price", col("price").cast("double"))
+    # Adding column "Rejection_Reason" to invalid records
+    orders_df = orders_df.withColumn("Rejection_Reason",
+                                     when(col("order_id").isNull(),lit("Missing order_id"))
+                                     .when(col("price").isNull(),lit("Missing price"))
+                                     .when(col("price")<=0,lit("Invalid price")))
+
+
+    valid_conditions=(col("order_id").isNotNull() 
+                      &
+                      col("price").isNotNull()
+                      &
+                      col("price")>0
+                      )
+    valid_records_df=orders_df.filter(valid_conditions)
+    invalid_records_df=orders_df.filter(~valid_conditions)
+
+    logger.info(f"Valid records count: {valid_records_df.count()}")
+    logger.info(f"Invalid records count: {invalid_records_df.count()}")
+
+    if valid_records_df.count() == 0:
+        logger.error("No valid record found. Failing the job.")
+        raise Exception("Data quality checks failed. No valid records available.")
+
+    if invalid_records_df.count()>0:
+        logger.info(f"Writing invalid records to {args['REJECT_PATH']}")
+        invalid_records_dyf=DynamicFrame.fromDF(invalid_records_df, glueContext, "Invalid Records")
+        glueContext.write_dynamic_frame.from_options(
+            frame=invalid_records_dyf,
+            connection_type="s3",
+            connection_options={"path": args["REJECT_PATH"]},
+            format="parquet",
+            transformation_ctx="Write_invalid_records"
+        )
+
+    #Busness Logic: Adding 10% discount to price of valid records
+    logger.info("Calculating discounted price")
+    valid_records_df = valid_records_df.withColumn("discounted_price", round(col("price")*0.9,2))
+    logger.info("Calculating final price after GST")
+    valid_records_df = valid_records_df.withColumn("final_price", round(col("discounted_price")*1.18,2))
+
+    #For every customer, identify whether this is their first order, second order, third order...
+    logger.info("Calculating order number for each customer")
+    window_spec = Window.partitionBy("customer_id").orderBy("order_date")
+    valid_records_df = valid_records_df.withColumn("order_number", row_number().over(window_spec))\
+    .withColumn("is_first_order", when(col("order_number")==1, lit(True)).otherwise(lit(False)))
+
+    # Writing curated data to output path
+    logger.info(f"writing curated data to {args['OUTPUT_PATH']}")
+    valid_records_dyf = DynamicFrame.fromDF(valid_records_df, glueContext, "Valid Records")
+    glueContext.write_dynamic_frame.from_options(
+        frame= valid_records_dyf,
+        connection_type= "s3",
+        format = "parquet",
+        connection_options={"path": args["OUTPUT_PATH"],
+                            "partitionkeys": ["order_date"]},
+        format_options = { "compression": "snappy"},
+        transformation_ctx = "orders_sink"
+    )
+
+    # Commit the job
+    logger.info("Committing Glue Job")
+    job.commit()
+
+    logger.info("Orders ETL completed successfully")
 
 except Exception as e:
     logger.error(f"Failed to read input data: {str(e)}")
