@@ -95,6 +95,10 @@ try:
             transformation_ctx="Write_invalid_records"
         )
 
+    valid_records_df = valid_records_df.withColumn(
+    "order_date",
+    to_date(col("OrderDate"))
+)
     #Busness Logic: Adding 10% discount to Price of valid records
     logger.info("Calculating discounted Price")
     valid_records_df = valid_records_df.withColumn("discounted_Price", round(col("Price")*0.9,2))
@@ -115,7 +119,7 @@ try:
         connection_type= "s3",
         format = "parquet",
         connection_options={"path": args["OUTPUT_PATH"],
-                            "partitionKeys": ["OrderDate"]},
+                            "partitionKeys": ["order_date"]},
         format_options = { "compression": "snappy"},
         transformation_ctx = "orders_sink"
     )
