@@ -57,19 +57,19 @@ try:
     orders_df.printSchema()
 
     
-    orders_df=orders_df.withColumn("price", col("price").cast("double"))
+    orders_df=orders_df.withColumn("Price", col("Price").cast("double"))
     # Adding column "Rejection_Reason" to invalid records
     orders_df = orders_df.withColumn("Rejection_Reason",
-                                     when(col("order_id").isNull(),lit("Missing order_id"))
-                                     .when(col("price").isNull(),lit("Price is not numeric"))
-                                     .when(col("price")<=0,lit("Invalid price")))
+                                     when(col("OrderID").isNull(),lit("Missing OrderID"))
+                                     .when(col("Price").isNull(),lit("Price is not numeric"))
+                                     .when(col("Price")<=0,lit("Invalid Price")))
 
 
-    valid_conditions=(col("order_id").isNotNull() 
+    valid_conditions=(col("OrderID").isNotNull() 
                       &
-                      col("price").isNotNull()
+                      col("Price").isNotNull()
                       &
-                      col("price")>0
+                      col("Price")>0
                       )
     valid_records_df=orders_df.filter(valid_conditions)
     invalid_records_df=orders_df.filter(~valid_conditions)
@@ -95,15 +95,15 @@ try:
             transformation_ctx="Write_invalid_records"
         )
 
-    #Busness Logic: Adding 10% discount to price of valid records
-    logger.info("Calculating discounted price")
-    valid_records_df = valid_records_df.withColumn("discounted_price", round(col("price")*0.9,2))
-    logger.info("Calculating final price after GST")
-    valid_records_df = valid_records_df.withColumn("final_price", round(col("discounted_price")*1.18,2))
+    #Busness Logic: Adding 10% discount to Price of valid records
+    logger.info("Calculating discounted Price")
+    valid_records_df = valid_records_df.withColumn("discounted_Price", round(col("Price")*0.9,2))
+    logger.info("Calculating final Price after GST")
+    valid_records_df = valid_records_df.withColumn("final_Price", round(col("discounted_Price")*1.18,2))
 
     #For every customer, identify whether this is their first order, second order, third order...
     logger.info("Calculating order number for each customer")
-    window_spec = Window.partitionBy("customer_id").orderBy("order_date")
+    window_spec = Window.partitionBy("Customer").orderBy("OrderDate")
     valid_records_df = valid_records_df.withColumn("order_number", row_number().over(window_spec))\
     .withColumn("is_first_order", when(col("order_number")==1, lit(True)).otherwise(lit(False)))
 
@@ -115,7 +115,7 @@ try:
         connection_type= "s3",
         format = "parquet",
         connection_options={"path": args["OUTPUT_PATH"],
-                            "partitionKeys": ["order_date"]},
+                            "partitionKeys": ["OrderDate"]},
         format_options = { "compression": "snappy"},
         transformation_ctx = "orders_sink"
     )
