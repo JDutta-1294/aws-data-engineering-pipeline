@@ -115,7 +115,7 @@ try:
         connection_type= "s3",
         format = "parquet",
         connection_options={"path": args["OUTPUT_PATH"],
-                            "partitionkeys": ["order_date"]},
+                            "partitionKeys": ["order_date"]},
         format_options = { "compression": "snappy"},
         transformation_ctx = "orders_sink"
     )
@@ -126,5 +126,5 @@ try:
     logger.info("Orders ETL completed successfully")
 
 except Exception as e:
-    logger.error(f"Failed to read input data: {str(e)}")
+    logger.error(f"Orders ETL Job failed: {str(e)}")
     raise 
