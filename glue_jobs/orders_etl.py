@@ -65,12 +65,12 @@ try:
                                      .when(col("Price")<=0,lit("Invalid Price")))
 
 
-    valid_conditions=(col("OrderID").isNotNull() 
+    valid_conditions=((col("OrderID").isNotNull())
                       &
-                      col("Price").isNotNull()
+                      (col("Price").isNotNull())
                       &
-                      col("Price")>0
-                      )
+                      (col("Price")>0)
+                     )
     valid_records_df=orders_df.filter(valid_conditions)
     invalid_records_df=orders_df.filter(~valid_conditions)
 
